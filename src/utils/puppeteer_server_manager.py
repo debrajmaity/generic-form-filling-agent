@@ -48,8 +48,10 @@ class PuppeteerServerManager:
                 async with session.get(f"{self.server_url}/status", timeout=aiohttp.ClientTimeout(total=2)) as resp:
                     if resp.status == 200:
                         status = await resp.json()
-                        return status.get('status') == 'running'
-        except:
+                        # Server is running if it responds, regardless of browser status
+                        return True
+        except Exception as e:
+            # Server is not reachable
             return False
         return False
     
@@ -126,10 +128,20 @@ class PuppeteerServerManager:
         try:
             print(f"🚀 Starting Puppeteer server on port {self.server_port}...")
             
-            # Use the enhanced server if it exists
-            server_file = "server-enhanced.js" if os.path.exists(
-                os.path.join(self.server_path, "server-enhanced.js")
-            ) else "server.js"
+            # Use basic server.js for now
+            server_file = "server.js"
+            
+            # Check if node is available
+            node_check = subprocess.run(["which", "node"], capture_output=True, text=True)
+            if node_check.returncode != 0:
+                return {
+                    "success": False,
+                    "message": "Node.js not found",
+                    "error": "Please install Node.js to run Puppeteer server"
+                }
+            
+            print(f"📁 Server path: {self.server_path}")
+            print(f"📄 Server file: {server_file}")
             
             self.process = subprocess.Popen(
                 ["node", server_file],
@@ -140,10 +152,25 @@ class PuppeteerServerManager:
                 text=True
             )
             
+            print(f"🔄 Started process with PID: {self.process.pid}")
+            
             # Wait for server to start
             max_retries = 30
             for i in range(max_retries):
                 await asyncio.sleep(0.5)
+                
+                # Check if process is still running
+                if self.process.poll() is not None:
+                    stdout, stderr = self.process.communicate()
+                    print(f"❌ Process died early")
+                    print(f"STDOUT: {stdout}")
+                    print(f"STDERR: {stderr}")
+                    return {
+                        "success": False,
+                        "message": "Server process died",
+                        "error": stderr or stdout
+                    }
+                
                 if await self.is_server_running():
                     print(f"✅ Puppeteer server started successfully")
                     
@@ -152,7 +179,11 @@ class PuppeteerServerManager:
                     
                     # Ensure browser is started
                     if status.get('status') != 'running':
-                        await self._start_browser()
+                        print(f"🌐 Starting browser...")
+                        browser_started = await self._start_browser()
+                        if browser_started:
+                            # Get updated status
+                            status = await self.get_server_status()
                     
                     return {
                         "success": True,
