@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import Dict, Any, Optional, Callable
 from browser_use import Agent, Browser
 from browser_use.browser.browser import BrowserConfig
-from browser_use.llm import ChatGoogle
 from dotenv import load_dotenv
 import json
 
@@ -124,7 +123,7 @@ class SimpleBrowserAgent:
                                       additional_comments: str = "",
                                       uploaded_files: list = None,
                                       requires_approval: bool = True) -> Dict[str, Any]:
-        """Simplified form filling that focuses on approval workflow"""
+        """Simplified form filling that focuses on approval workflow with browser-use controllers"""
         
         try:
             await self.send_progress("Starting browser automation", 10)
@@ -137,6 +136,9 @@ class SimpleBrowserAgent:
             # Navigate to the target URL
             await self.browser.navigate(target_url)
             await asyncio.sleep(3)
+            
+            # Get current page
+            current_page = await self.browser.get_current_page()
             
             # Take initial screenshot
             await self.take_screenshot()
@@ -192,11 +194,7 @@ class SimpleBrowserAgent:
                 await asyncio.sleep(1)
                 await self.take_screenshot()
             
-            await self.send_progress("Checking for CAPTCHAs", 78)
-            await asyncio.sleep(2)  # Simulate CAPTCHA check
-            await self.take_screenshot()
-            
-            await self.send_progress("CAPTCHA handling completed", 82)
+            await self.send_progress("Form filling completed", 80)
             await self.take_screenshot()
             
             # Prepare comprehensive form data for approval

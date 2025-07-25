@@ -1,0 +1,17 @@
+{
+  "name": "puppeteer-cdp-server",
+  "version": "1.0.0",
+  "description": "Puppeteer server that exposes Chrome DevTools Protocol",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0",
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}

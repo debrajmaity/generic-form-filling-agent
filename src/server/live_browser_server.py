@@ -28,7 +28,6 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
-from real_browser_agent import RealBrowserAgent
 from simple_browser_agent import SimpleBrowserAgent
 
 # Load environment variables from .env file
@@ -164,17 +163,23 @@ class LiveJobManager:
             job["status"] = JobStatus.RUNNING
             await manager.broadcast_job_update(job_id, "status_change", "Job started", {"status": "running"})
             
-            # Create simplified browser agent (change to RealBrowserAgent for full AI)
+            # Create browser agent based on engine selection
             request_data = job["request_data"]
-            USE_SIMPLE_AGENT = True  # Set to False for full AI agent
+            browser_engine = request_data.get("browser_engine", "default")
             
-            if USE_SIMPLE_AGENT:
-                agent = SimpleBrowserAgent(
+            # Choose agent based on browser engine
+            if browser_engine == "puppeteer":
+                from ..agents.puppeteer_browser_agent import PuppeteerBrowserAgent
+                agent = PuppeteerBrowserAgent(
                     headless=request_data.get("headless", False),
-                    api_key=os.getenv("GOOGLE_API_KEY")
+                    cdp_url=request_data.get("cdp_url", "http://localhost:9222"),
+                    api_key=os.getenv("GOOGLE_API_KEY"),
+                    manage_server=request_data.get("manage_puppeteer_server", True),
+                    server_path=request_data.get("puppeteer_server_path", None)
                 )
             else:
-                agent = RealBrowserAgent(
+                # Default to SimpleBrowserAgent for browser-use
+                agent = SimpleBrowserAgent(
                     headless=request_data.get("headless", False),
                     api_key=os.getenv("GOOGLE_API_KEY")
                 )
@@ -244,7 +249,22 @@ class LiveJobManager:
             
             # Execute the job
             if request_data.get("target_url", "").startswith("http"):
-                if USE_SIMPLE_AGENT:
+                if browser_engine == "puppeteer":
+                    result = await agent.fill_generic_form_puppeteer(
+                        target_url=request_data["target_url"],
+                        platform=request_data["platform"],
+                        form_type=request_data.get("form_type", "contact"),
+                        priority=request_data.get("priority", "normal"),
+                        subject=request_data.get("subject", ""),
+                        description=request_data["description"],
+                        contact_info=request_data.get("contact_info", {}),
+                        reference_urls=request_data.get("reference_urls", []),
+                        additional_comments=request_data.get("additional_comments", ""),
+                        uploaded_files=request_data.get("uploaded_files", []),
+                        requires_approval=request_data.get("require_human_approval", True)
+                    )
+                else:
+                    # Default browser-use agent
                     result = await agent.fill_generic_form_simple(
                         target_url=request_data["target_url"],
                         platform=request_data["platform"],
@@ -256,15 +276,6 @@ class LiveJobManager:
                         reference_urls=request_data.get("reference_urls", []),
                         additional_comments=request_data.get("additional_comments", ""),
                         uploaded_files=request_data.get("uploaded_files", []),
-                        requires_approval=request_data.get("require_human_approval", True)
-                    )
-                else:
-                    result = await agent.fill_takedown_form(
-                        target_url=request_data["target_url"],
-                        platform=request_data["platform"],
-                        abuse_type=request_data["abuse_type"],
-                        description=request_data["description"],
-                        contact_info=request_data["contact_info"],
                         requires_approval=request_data.get("require_human_approval", True)
                     )
             else:
@@ -914,6 +925,27 @@ async def dashboard():
             <p><span class="live-indicator"></span>AI-powered form filling for any website with intelligent field detection</p>
         </div>
         
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border: 1px solid #2196f3;">
+                <h4 style="margin: 0 0 10px 0; color: #1976d2;">🔍 CAPTCHA Solving</h4>
+                <ul style="margin: 0; padding-left: 20px; font-size: 0.9em;">
+                    <li>Automatic CAPTCHA detection</li>
+                    <li>Supports reCAPTCHA v2/v3</li>
+                    <li>hCaptcha support</li>
+                    <li>Image CAPTCHA solving</li>
+                </ul>
+            </div>
+            <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; border: 1px solid #4caf50;">
+                <h4 style="margin: 0 0 10px 0; color: #2e7d32;">📎 File Upload Automation</h4>
+                <ul style="margin: 0; padding-left: 20px; font-size: 0.9em;">
+                    <li>Auto-detect file input fields</li>
+                    <li>Upload multiple files</li>
+                    <li>Smart field mapping</li>
+                    <li>Drag & drop support</li>
+                </ul>
+            </div>
+        </div>
+        
         <div class="browser-note">
             <strong>🎯 Smart Form Filling!</strong> Set headless=false to watch the AI agent automatically navigate to any website, detect form fields, and fill them with your custom data using intelligent field matching.
         </div>
@@ -1006,10 +1038,20 @@ async def dashboard():
             </div>
             <div class="form-field">
                 <label>📎 File Attachments (TXT, PDF, Images):</label>
+                <div style="margin-bottom: 10px; padding: 10px; background: #e8f5e9; border-radius: 8px; border: 1px solid #4caf50;">
+                    <strong style="color: #2e7d32;">🚀 Enhanced File Upload Features:</strong>
+                    <ul style="margin: 5px 0; padding-left: 20px; font-size: 0.9em; color: #2e7d32;">
+                        <li>✅ Direct file upload to our server</li>
+                        <li>✅ Automatic file upload to web forms via browser automation</li>
+                        <li>✅ Intelligent file input field detection</li>
+                        <li>✅ Multi-file upload support</li>
+                    </ul>
+                </div>
                 <div class="file-upload-area" id="fileUploadArea">
                     <div class="file-drop-text">
                         <strong>📁 Drop files here or click to upload</strong><br>
-                        <small>Supported: .txt, .pdf, .jpg, .png, .gif (Max 10MB each)</small>
+                        <small>Supported: .txt, .pdf, .jpg, .png, .gif (Max 10MB each)</small><br>
+                        <small style="color: #4caf50;">Files will be automatically uploaded to form fields when detected</small>
                     </div>
                     <input type="file" id="fileInput" multiple accept=".txt,.pdf,.jpg,.jpeg,.png,.gif" style="display: none;">
                     <button type="button" onclick="document.getElementById('fileInput').click()" style="margin-top: 10px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
@@ -1017,6 +1059,27 @@ async def dashboard():
                     </button>
                 </div>
                 <div class="uploaded-files" id="uploadedFiles"></div>
+            </div>
+            <div class="form-field">
+                <label>🚀 Browser Engine:</label>
+                <select id="browserEngine" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;" onchange="togglePuppeteerOptions()">
+                    <option value="browser-use" selected>Browser-Use (AI-Powered)</option>
+                    <option value="puppeteer">Puppeteer (CDP)</option>
+                </select>
+                <small style="color: #666; display: block; margin-top: 5px;">
+                    Browser-Use: AI-powered form filling with smart field detection<br>
+                    Puppeteer: Direct browser control via Chrome DevTools Protocol
+                </small>
+                
+                <div id="puppeteerOptions" style="display: none; margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 4px;">
+                    <label style="display: flex; align-items: center;">
+                        <input type="checkbox" id="managePuppeteerServer" checked style="margin-right: 8px;">
+                        <span>🤖 Automatically manage Puppeteer server</span>
+                    </label>
+                    <small style="color: #666; display: block; margin-top: 5px; margin-left: 24px;">
+                        When checked, the Python agent will automatically start and stop the Node.js Puppeteer server
+                    </small>
+                </div>
             </div>
             <div class="form-field">
                 <label>
@@ -1198,7 +1261,10 @@ async def dashboard():
                     job_title: document.getElementById('jobTitle').value
                 },
                 require_human_approval: true,
-                headless: document.getElementById('headless').checked
+                headless: document.getElementById('headless').checked,
+                browser_engine: document.getElementById('browserEngine').value,
+                manage_puppeteer_server: document.getElementById('browserEngine').value === 'puppeteer' ? 
+                    document.getElementById('managePuppeteerServer').checked : false
             };
             
             // Validate required fields
@@ -1331,6 +1397,12 @@ async def dashboard():
         
         // File upload handling
         let uploadedFiles = [];
+        
+        function togglePuppeteerOptions() {
+            const engine = document.getElementById('browserEngine').value;
+            const options = document.getElementById('puppeteerOptions');
+            options.style.display = engine === 'puppeteer' ? 'block' : 'none';
+        }
         
         function setupFileUpload() {
             const fileInput = document.getElementById('fileInput');
